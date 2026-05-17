@@ -51,11 +51,11 @@ export function syncCanvasImagesToPanel(
 export async function layersToFabric(
   canvas: Canvas,
   layers: Layer[],
-  panelSize?: { width: number; height: number }
+  panelSize?: { width: number; height: number; backgroundColor?: string }
 ): Promise<void> {
   await initFabricCustomProps();
   canvas.clear();
-  canvas.backgroundColor = "#ffffff";
+  canvas.backgroundColor = panelSize?.backgroundColor ?? "#ffffff";
 
   const panelWidth = panelSize?.width ?? canvas.width ?? 690;
   const panelHeight = panelSize?.height ?? canvas.height ?? 400;
@@ -234,21 +234,20 @@ export async function getImageNaturalSize(
   return normalized;
 }
 
-/** 패널(컷) 크기 — 붙여넣기 시 논리 픽셀, 파일은 원본 픽셀 */
+/** 패널(컷) 크기 — 클립보드는 파일 픽셀 그대로, 로컬 파일은 필요 시 보정 */
 export async function getPanelSizeForImage(
   blob: Blob,
   options?: { fromClipboard?: boolean }
 ): Promise<{ width: number; height: number; bitmapWidth: number; bitmapHeight: number }> {
   const bitmap = await getImageDimensions(blob);
-  const logical = normalizeLogicalPixelDimensions(
-    bitmap.width,
-    bitmap.height,
-    options?.fromClipboard ?? false
-  );
+  const logical = options?.fromClipboard
+    ? { width: bitmap.width, height: bitmap.height }
+    : normalizeLogicalPixelDimensions(bitmap.width, bitmap.height, false);
+  const clamped = clampPanelSize(logical.width, logical.height);
   return {
-    ...clampPanelSize(logical.width, logical.height),
-    bitmapWidth: Math.round(bitmap.width),
-    bitmapHeight: Math.round(bitmap.height),
+    ...clamped,
+    bitmapWidth: clamped.width,
+    bitmapHeight: clamped.height,
   };
 }
 

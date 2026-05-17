@@ -223,13 +223,21 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
   };
 
   const handlePanelResize = useCallback(
-    async (width: number, height: number) => {
+    async (
+      width: number,
+      height: number,
+      extra?: { backgroundColor?: string }
+    ) => {
       if (!activePanel) return;
       const { width: w, height: h } = clampPanelSize(width, height);
-      await updatePanel(activePanel.id, { width: w, height: h });
+      const updates: Partial<Panel> = { width: w, height: h };
+      if (extra?.backgroundColor !== undefined) {
+        updates.backgroundColor = extra.backgroundColor;
+      }
+      await updatePanel(activePanel.id, updates);
       setPanels((prev) => {
         const next = prev.map((p) =>
-          p.id === activePanel.id ? { ...p, width: w, height: h } : p
+          p.id === activePanel.id ? { ...p, ...updates } : p
         );
         setPanelsStore(next);
         return next;
@@ -266,19 +274,32 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
         const { createAssetFromFile } = await import("@/lib/db/persistence");
         let afterId: string | null =
           activePanel?.id ?? panels[panels.length - 1]?.id ?? null;
-        let fillCurrentCanvas =
+        const canPasteOnCanvas =
           !!activePanel &&
-          layers.length === 0 &&
           !!editorRef.current &&
           panels.some((p) => p.id === activePanel.id);
 
         for (const file of files) {
-          if (fillCurrentCanvas && afterId === activePanel?.id) {
+          if (fromClipboard && canPasteOnCanvas) {
+            const asset = await createAssetFromFile(project.id, file);
+            await editorRef.current!.replaceWithImage(asset.id, asset.blob, {
+              fromClipboard: true,
+            });
+            const layerList = await listLayers(activePanel!.id);
+            setLayers(layerList);
+            setLayersEpoch((e) => e + 1);
+          } else if (
+            !fromClipboard &&
+            canPasteOnCanvas &&
+            layers.length === 0
+          ) {
             const asset = await createAssetFromFile(project.id, file);
             await editorRef.current!.addImage(asset.id, asset.blob, {
-              fromClipboard,
+              fromClipboard: false,
             });
-            fillCurrentCanvas = false;
+            const layerList = await listLayers(activePanel!.id);
+            setLayers(layerList);
+            setLayersEpoch((e) => e + 1);
           } else {
             const panel = await importImageAsPanel(projectId, episodeId, file, {
               insertAfterPanelId: afterId,

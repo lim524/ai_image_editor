@@ -1,6 +1,10 @@
 import type { FabricObject, Group } from "fabric";
 import { DEFAULT_SFX_FONT, DEFAULT_TEXT_FONT } from "@/lib/fonts/presets";
-import { fitTextBoxToContent } from "@/lib/fabric/text-layout";
+import {
+  fitBubbleInnerText,
+  fitTextBoxToContent,
+  type BubbleTextBounds,
+} from "@/lib/fabric/text-layout";
 
 type FabricModule = typeof import("fabric");
 
@@ -41,10 +45,35 @@ export function getBubbleShapeChildren(obj: FabricObject): FabricObject[] {
   return (obj as Group).getObjects().filter((child) => !isBubbleTextObject(child));
 }
 
+/** 말풍선 도형 기준 내부 텍스트 허용 영역 */
+export function getBubbleTextBounds(obj: FabricObject): BubbleTextBounds {
+  const shapes = getBubbleShapeChildren(obj);
+  const main = shapes[0];
+  if (!main) return { maxWidth: 120, maxHeight: 72 };
+
+  if (main.type === "ellipse") {
+    const e = main as FabricObject & { rx?: number; ry?: number };
+    const rx = Number(e.rx ?? 50);
+    const ry = Number(e.ry ?? 30);
+    return { maxWidth: rx * 1.75, maxHeight: ry * 1.55 };
+  }
+  if (main.type === "rect") {
+    const r = main as FabricObject & { width?: number; height?: number };
+    return {
+      maxWidth: Number(r.width ?? 120) * 0.82,
+      maxHeight: Number(r.height ?? 80) * 0.72,
+    };
+  }
+  if (main.type === "polygon") {
+    return { maxWidth: 100, maxHeight: 64 };
+  }
+  return { maxWidth: 120, maxHeight: 72 };
+}
+
 function createInnerBubbleText(
   fabric: FabricModule,
   content: string,
-  maxWidth: number,
+  bounds: BubbleTextBounds,
   fontSize = 16
 ): FabricObject {
   const text = new fabric.IText(content, {
@@ -56,24 +85,23 @@ function createInnerBubbleText(
     fontFamily: DEFAULT_TEXT_FONT,
     fontSize,
     fill: "#000000",
-    width: maxWidth,
     splitByGrapheme: true,
   });
   tag(text, { role: "bubbleText" });
-  fitTextBoxToContent(text, 12, 8);
+  fitBubbleInnerText(text, bounds);
   return text;
 }
 
-function createBubbleGroup(
+async function createBubbleGroup(
   fabric: FabricModule,
   type: BubbleType,
   left: number,
   top: number,
   shapes: FabricObject[],
-  textWidth: number,
+  textBounds: BubbleTextBounds,
   fontSize = 16
-): FabricObject {
-  const text = createInnerBubbleText(fabric, "", textWidth, fontSize);
+): Promise<FabricObject> {
+  const text = createInnerBubbleText(fabric, "", textBounds, fontSize);
   const group = new fabric.Group([...shapes, text], {
     left,
     top,
@@ -81,7 +109,20 @@ function createBubbleGroup(
     originY: "center",
     subTargetCheck: true,
   });
-  return tag(group, { layerType: "bubble", bubbleType: type });
+  tag(group, { layerType: "bubble", bubbleType: type });
+
+  const mainShape = shapes[0];
+  if (mainShape) {
+    const clip = await mainShape.clone();
+    clip.set({
+      fill: "#ffffff",
+      stroke: undefined,
+      strokeWidth: 0,
+      absolutePositioned: false,
+    });
+    group.clipPath = clip;
+  }
+  return group;
 }
 
 export async function createSpeechBubble(
@@ -109,7 +150,10 @@ export async function createSpeechBubble(
         }),
         { role: "bubbleShape" }
       );
-      return createBubbleGroup(fabric, type, left, top, [shape], Math.floor(rx * 1.85));
+      return createBubbleGroup(fabric, type, left, top, [shape], {
+        maxWidth: rx * 1.75,
+        maxHeight: ry * 1.55,
+      });
     }
     case "round": {
       const w = 160;
@@ -130,7 +174,10 @@ export async function createSpeechBubble(
         }),
         { role: "bubbleShape" }
       );
-      return createBubbleGroup(fabric, type, left, top, [shape], Math.floor(w * 0.85));
+      return createBubbleGroup(fabric, type, left, top, [shape], {
+        maxWidth: w * 0.82,
+        maxHeight: h * 0.72,
+      });
     }
     case "thought":
       return createThoughtBubble(fabric, left, top);
@@ -154,7 +201,10 @@ export async function createSpeechBubble(
         }),
         { role: "bubbleShape" }
       );
-      return createBubbleGroup(fabric, type, left, top, [shape], Math.floor(rx * 1.85), 15);
+      return createBubbleGroup(fabric, type, left, top, [shape], {
+        maxWidth: rx * 1.75,
+        maxHeight: ry * 1.55,
+      }, 15);
     }
     default:
       return createSpeechBubble("oval", left, top);
@@ -165,7 +215,7 @@ function createThoughtBubble(
   fabric: FabricModule,
   left: number,
   top: number
-): FabricObject {
+): Promise<FabricObject> {
   const main = tag(
     new fabric.Ellipse({
       left: 0,
@@ -206,14 +256,17 @@ function createThoughtBubble(
     }),
     { role: "bubbleShape" }
   );
-  return createBubbleGroup(fabric, "thought", left, top, [main, dot1, dot2], 120);
+  return createBubbleGroup(fabric, "thought", left, top, [main, dot1, dot2], {
+    maxWidth: 120,
+    maxHeight: 72,
+  });
 }
 
 function createShoutBubble(
   fabric: FabricModule,
   left: number,
   top: number
-): FabricObject {
+): Promise<FabricObject> {
   const points = [
     { x: 0, y: -50 },
     { x: 45, y: -35 },
@@ -236,7 +289,10 @@ function createShoutBubble(
     }),
     { role: "bubbleShape" }
   );
-  return createBubbleGroup(fabric, "shout", left, top, [shape], 110, 17);
+  return createBubbleGroup(fabric, "shout", left, top, [shape], {
+    maxWidth: 100,
+    maxHeight: 64,
+  }, 17);
 }
 
 /** 말풍선 안 텍스트 바로 편집 모드 */

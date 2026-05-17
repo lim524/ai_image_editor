@@ -8,15 +8,15 @@ function isKnownGenerationWidth(width: number): boolean {
 }
 
 /**
- * 클립보드 붙여넣기 시 브라우저가 2x·DPR 해상도로 주는 경우가 많음.
- * NovelAI 표시 해상도(예: 832)에 맞게 논리 픽셀 크기로 보정.
+ * 파일 드롭 등에서만 사용. 클립보드는 원본 픽셀을 그대로 씀(사이트별 2x 보정 오류 방지).
+ * 정확히 2배·알려진 생성 너비일 때만 절반으로 줄임.
  */
 export function normalizeLogicalPixelDimensions(
   width: number,
   height: number,
   fromClipboard = false
 ): { width: number; height: number } {
-  if (!fromClipboard || width <= 0 || height <= 0) {
+  if (fromClipboard || width <= 0 || height <= 0) {
     return { width: Math.round(width), height: Math.round(height) };
   }
 

@@ -54,8 +54,8 @@ function buildImageLayer(
     top: 0,
     width: ow,
     height: oh,
-    scaleX: panelWidth / ow,
-    scaleY: panelHeight / oh,
+    scaleX: 1,
+    scaleY: 1,
     originX: "left",
     originY: "top",
     assetId,
@@ -97,6 +97,7 @@ export async function importImageAsPanel(
   const panel = await createPanel(episodeId, {
     width,
     height,
+    backgroundColor: options?.fromClipboard ? "transparent" : undefined,
     title: options?.title ?? (baseName || undefined),
     insertAfterPanelId: options?.insertAfterPanelId ?? null,
   });

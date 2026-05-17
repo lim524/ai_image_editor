@@ -39,3 +39,52 @@ export function fitTextBoxToContent(
   t.set({ width, height });
   t.setCoords();
 }
+
+export interface BubbleTextBounds {
+  maxWidth: number;
+  maxHeight: number;
+}
+
+/** 말풍선 안 텍스트: 너비 고정·줄바꿈, 높이만 조절(넘치면 글자 축소) */
+export function fitBubbleInnerText(
+  obj: FabricObject,
+  bounds: BubbleTextBounds,
+  padding = 6
+): void {
+  const t = obj as TextLike;
+  const maxWidth = Math.max(32, bounds.maxWidth - padding * 2);
+  const maxHeight = Math.max(24, bounds.maxHeight - padding * 2);
+
+  t.set({
+    width: maxWidth,
+    splitByGrapheme: true,
+    textAlign: "center",
+    originX: "center",
+    originY: "center",
+    left: 0,
+    top: 0,
+  });
+
+  let fontSize = Number(t.fontSize ?? 16);
+  const minFont = 9;
+
+  for (let i = 0; i < 12; i++) {
+    t.set({ fontSize });
+    t.initDimensions?.();
+    const rect = t.getBoundingRect();
+    const h = Math.ceil(rect.height);
+    const w = Math.ceil(rect.width);
+    if (h <= maxHeight && w <= maxWidth + 2) break;
+    if (fontSize <= minFont) break;
+    fontSize = Math.max(minFont, fontSize - 1);
+  }
+
+  t.initDimensions?.();
+  const rect = t.getBoundingRect();
+  const height = Math.min(
+    maxHeight,
+    Math.max(MIN_TEXT_BOX_HEIGHT, Math.ceil(rect.height) + 4)
+  );
+  t.set({ width: maxWidth, height });
+  t.setCoords();
+}

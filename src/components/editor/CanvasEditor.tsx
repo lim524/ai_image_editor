@@ -21,11 +21,12 @@ import {
   layersToFabric,
   restoreCanvasSnapshot,
 } from "@/lib/fabric/canvas-utils";
-import { fitTextBoxToContent } from "@/lib/fabric/text-layout";
+import { fitBubbleInnerText, fitTextBoxToContent } from "@/lib/fabric/text-layout";
 import {
   createDialogText,
   createSfxText,
   createSpeechBubble,
+  getBubbleTextBounds,
   isBubbleTextObject,
   startBubbleTextEditing,
   type BubbleType,
@@ -48,6 +49,12 @@ export interface CanvasEditorHandle {
     blob: Blob,
     options?: { fromClipboard?: boolean }
   ) => Promise<void>;
+  /** 붙여넣기: 기존 레이어 제거 후 이미지 크기에 맞춰 컷을 이미지와 동일하게 설정 */
+  replaceWithImage: (
+    assetId: string,
+    blob: Blob,
+    options?: { fromClipboard?: boolean }
+  ) => Promise<void>;
   undo: () => void;
   redo: () => void;
   persist: () => void;
@@ -61,7 +68,11 @@ interface CanvasEditorProps {
   panel: Panel;
   layers: Layer[];
   onLayersChange: (layers: Layer[]) => void;
-  onPanelResize?: (width: number, height: number) => Promise<void>;
+  onPanelResize?: (
+    width: number,
+    height: number,
+    extra?: { backgroundColor?: string }
+  ) => Promise<void>;
 }
 
 const BUBBLE_TOOLS: Record<string, BubbleType> = {
@@ -218,6 +229,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         await layersToFabric(canvas, layerData, {
           width: panel.width,
           height: panel.height,
+          backgroundColor: panel.backgroundColor,
         });
         layersRef.current = layerData;
         hasLoadedRef.current = true;
@@ -295,14 +307,16 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         canvas.on("text:editing:exited", (opt) => {
           const target = (opt as { target?: FabricObject }).target;
           if (!target) return;
-          fitTextBoxToContent(target);
           if (isBubbleTextObject(target)) {
             const parent = (
               target as FabricObject & { group?: FabricObject }
             ).group;
             if (parent) {
+              fitBubbleInnerText(target, getBubbleTextBounds(parent));
               canvas.setActiveObject(parent);
             }
+          } else {
+            fitTextBoxToContent(target);
           }
           syncSelection();
           useEditorStore.getState().bumpProperties();
@@ -487,9 +501,12 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
             fromClipboard: options?.fromClipboard,
           });
           if (size.width > 0 && size.height > 0) {
-            await onPanelResize?.(size.width, size.height);
+            const bg = options?.fromClipboard ? "transparent" : panel.backgroundColor;
+            await onPanelResize?.(size.width, size.height, {
+              backgroundColor: bg,
+            });
             canvas.setDimensions({ width: size.width, height: size.height });
-            canvas.backgroundColor = panel.backgroundColor;
+            canvas.backgroundColor = bg;
             naturalSize = true;
           }
         }
@@ -497,6 +514,28 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         await addImageFromAsset(canvas, assetId, blob, { naturalSize });
         fitViewport();
         recordHistory("이미지 추가", before, captureSnapshot());
+        markDirty();
+        persistLayers();
+      },
+      replaceWithImage: async (assetId, blob, options) => {
+        const before = captureSnapshot();
+        const canvas = fabricRef.current;
+        if (!canvas) return;
+
+        const size = await getPanelSizeForImage(blob, {
+          fromClipboard: options?.fromClipboard ?? true,
+        });
+        if (size.width <= 0 || size.height <= 0) return;
+
+        const bg = "transparent";
+        await onPanelResize?.(size.width, size.height, { backgroundColor: bg });
+        canvas.setDimensions({ width: size.width, height: size.height });
+        canvas.backgroundColor = bg;
+        canvas.clear();
+
+        await addImageFromAsset(canvas, assetId, blob, { naturalSize: true });
+        fitViewport();
+        recordHistory("이미지 붙여넣기", before, captureSnapshot());
         markDirty();
         persistLayers();
       },

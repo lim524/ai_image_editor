@@ -1,8 +1,9 @@
 import { Shadow, type Canvas, type FabricObject, type FabricText, type Group } from "fabric";
 import type { SelectedObjectType } from "@/stores/editorStore";
-import { fitTextBoxToContent } from "@/lib/fabric/text-layout";
+import { fitBubbleInnerText, fitTextBoxToContent } from "@/lib/fabric/text-layout";
 import {
   getBubbleShapeChildren,
+  getBubbleTextBounds,
   getBubbleTextTarget,
   isBubbleTextObject,
 } from "@/lib/fabric/bubbles";
@@ -148,7 +149,12 @@ export function applyTextStyle(
     patch.lineHeight !== undefined ||
     patch.fontWeight !== undefined
   ) {
-    fitTextBoxToContent(obj);
+    if (isBubbleTextObject(obj)) {
+      const parent = (obj as FabricObject & { group?: FabricObject }).group;
+      if (parent) fitBubbleInnerText(obj, getBubbleTextBounds(parent));
+    } else {
+      fitTextBoxToContent(obj);
+    }
   }
   t.set("dirty", true);
   canvas.requestRenderAll();
@@ -175,9 +181,13 @@ export function applyBubbleTextContent(
 ) {
   const target = getBubbleTextTarget(obj);
   if (!target) return;
-  applyTextContent(target, text, canvas);
+  const t = target as FabricText;
+  t.set("text", text);
+  fitBubbleInnerText(target, getBubbleTextBounds(obj));
+  t.set("dirty", true);
   const g = obj.type === "group" ? (obj as Group) : null;
   g?.set("dirty", true);
+  canvas.requestRenderAll();
 }
 
 export function readBubbleStyle(obj: FabricObject): BubbleStyleSnapshot {
@@ -233,6 +243,8 @@ export function applyBubbleInnerTextStyle(
   const text = getBubbleTextTarget(obj);
   if (!text) return;
   applyTextStyle(text, patch, canvas);
+  const g = obj.type === "group" ? (obj as Group) : null;
+  g?.set("dirty", true);
 }
 
 export function applyImageOpacity(
