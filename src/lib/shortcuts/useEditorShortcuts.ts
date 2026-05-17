@@ -70,15 +70,12 @@ export function useEditorShortcuts({
           window.dispatchEvent(new CustomEvent("editor:layer-order", { detail: { dir: "back" } }));
           break;
         case "assets.open":
-          store.setShowAssetLibrary(true);
           break;
         case "shortcuts.open":
           setSettingsOpen(true);
           break;
         default: {
-          const dock = DOCK_FROM_SHORTCUT[actionId];
-          if (dock) {
-            store.toggleDock(dock);
+          if (DOCK_FROM_SHORTCUT[actionId]) {
             break;
           }
           const tool = TOOL_FROM_SHORTCUT[actionId];

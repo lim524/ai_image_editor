@@ -13,7 +13,6 @@ import type { Layer, Panel } from "@/lib/db/types";
 import { ActionHistoryStack } from "@/lib/editor/action-history";
 import {
   addImageFromAsset,
-  applyCanvasFilters,
   captureCanvasSnapshot,
   fabricToLayers,
   fitCanvasToViewport,
@@ -24,7 +23,6 @@ import {
 import { fitBubbleInnerText, fitTextBoxToContent } from "@/lib/fabric/text-layout";
 import {
   createDialogText,
-  createSfxText,
   createSpeechBubble,
   getBubbleTextBounds,
   isBubbleTextObject,
@@ -76,19 +74,7 @@ interface CanvasEditorProps {
 }
 
 const BUBBLE_TOOLS: Record<string, BubbleType> = {
-  "bubble-oval": "oval",
-  "bubble-round": "round",
-  "bubble-thought": "thought",
-  "bubble-shout": "shout",
-  "bubble-whisper": "whisper",
-};
-
-const BUBBLE_LABELS: Record<string, string> = {
-  "bubble-oval": "타원 말풍선 추가",
-  "bubble-round": "둥근 말풍선 추가",
-  "bubble-thought": "생각 말풍선 추가",
-  "bubble-shout": "외침 말풍선 추가",
-  "bubble-whisper": "속삭임 말풍선 추가",
+  bubble: "oval",
 };
 
 function layersFingerprint(layers: Layer[]): string {
@@ -113,9 +99,6 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
     const initialLayersLoadedRef = useRef(false);
     const [canvasReady, setCanvasReady] = useState(0);
     const activeTool = useEditorStore((s) => s.activeTool);
-    const brightness = useEditorStore((s) => s.brightness);
-    const contrast = useEditorStore((s) => s.contrast);
-    const saturation = useEditorStore((s) => s.saturation);
     const setUndoState = useEditorStore((s) => s.setUndoState);
 
     layersRef.current = layers;
@@ -390,13 +373,6 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
 
     useEffect(() => {
       const canvas = fabricRef.current;
-      if (canvas && hasLoadedRef.current) {
-        applyCanvasFilters(canvas, brightness, contrast, saturation);
-      }
-    }, [brightness, contrast, saturation]);
-
-    useEffect(() => {
-      const canvas = fabricRef.current;
       if (!canvas || !hasLoadedRef.current) return;
 
       async function applyTool() {
@@ -413,7 +389,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           canvas!.setActiveObject(bubble);
           syncSelection();
           startBubbleTextEditing(canvas!, bubble);
-          recordHistory(BUBBLE_LABELS[tool] ?? "말풍선 추가", before, captureSnapshot());
+          recordHistory("말풍선 추가", before, captureSnapshot());
         } else if (tool === "text") {
           const text = await createDialogText(
             "",
@@ -429,21 +405,6 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           editable.enterEditing?.();
           requestAnimationFrame(() => editable.selectAll?.());
           recordHistory("대사 추가", before, captureSnapshot());
-        } else if (tool === "sfx") {
-          const sfx = await createSfxText(
-            "",
-            (canvas!.width ?? 300) / 2,
-            (canvas!.height ?? 200) / 2
-          );
-          canvas!.add(sfx);
-          canvas!.setActiveObject(sfx);
-          const editable = sfx as {
-            enterEditing?: () => void;
-            selectAll?: () => void;
-          };
-          editable.enterEditing?.();
-          requestAnimationFrame(() => editable.selectAll?.());
-          recordHistory("효과음 추가", before, captureSnapshot());
         } else return;
 
         markDirty();
@@ -452,11 +413,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         useEditorStore.getState().setActiveTool("select");
       }
 
-      if (
-        activeTool.startsWith("bubble-") ||
-        activeTool === "text" ||
-        activeTool === "sfx"
-      ) {
+      if (activeTool === "bubble" || activeTool === "text") {
         void applyTool();
       }
     }, [

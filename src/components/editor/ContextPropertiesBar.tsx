@@ -10,8 +10,6 @@ import {
   applyBubbleInnerTextStyle,
   applyBubbleStyle,
   applyBubbleTextContent,
-  applyImageFlipX,
-  applyImageOpacity,
   applyTextContent,
   applyTextStyle,
   readBubbleInnerTextStyle,
@@ -20,7 +18,6 @@ import {
   readTextContent,
   readTextStyle,
 } from "@/lib/fabric/properties";
-import { applyCanvasFilters } from "@/lib/fabric/canvas-utils";
 import type { CanvasEditorHandle } from "./CanvasEditor";
 import { NumberField } from "@/components/ui/NumberField";
 
@@ -33,10 +30,6 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
   const selectedObject = useEditorStore((s) => s.selectedObject);
   const textStyle = useEditorStore((s) => s.textStyle);
   const bubbleStyle = useEditorStore((s) => s.bubbleStyle);
-  const brightness = useEditorStore((s) => s.brightness);
-  const contrast = useEditorStore((s) => s.contrast);
-  const saturation = useEditorStore((s) => s.saturation);
-  const setAdjustments = useEditorStore((s) => s.setAdjustments);
   const propertiesTick = useEditorStore((s) => s.propertiesTick);
   const [fontPresets, setFontPresets] = useState<FontPreset[]>(FONT_PRESETS);
   const [textDraft, setTextDraft] = useState("");
@@ -118,14 +111,6 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
     });
   };
 
-  const patchImageAdjust = (label: string, b: number, c: number, s: number) => {
-    if (!record) return;
-    record(label, () => {
-      setAdjustments(b, c, s);
-      if (canvas) applyCanvasFilters(canvas, b, c, s);
-    });
-  };
-
   if (selectedObjectType === "none") {
     return (
       <div className="flex-1 flex items-center px-3 min-w-0 h-11">
@@ -141,6 +126,16 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
       selectedObjectType === "sfx" ||
       selectedObjectType === "bubble") &&
     textStyle;
+
+  if (selectedObjectType === "image") {
+    return (
+      <div className="flex-1 flex items-center px-3 min-w-0 h-11" key={propertiesTick}>
+        <span className="text-xs text-zinc-500">
+          이미지 — 드래그로 이동, 모서리 핸들로 크기 조절 (Ctrl+V 붙여넣기)
+        </span>
+      </div>
+    );
+  }
 
   if (isTextLike) {
     return (
@@ -301,69 +296,7 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
     );
   }
 
-  return (
-    <div
-      className="flex-1 flex items-center gap-3 px-3 overflow-x-auto min-w-0 h-11"
-      key={propertiesTick}
-    >
-      <span className="text-[10px] uppercase tracking-wider text-zinc-500 shrink-0 pr-1">
-        이미지
-      </span>
-
-      {selectedObjectType === "image" && selectedObject && (
-        <>
-          <NumberField
-            label="불투명"
-            value={Math.round((selectedObject.opacity ?? 1) * 100)}
-            min={0}
-            max={100}
-            suffix="%"
-            onCommit={(v) => {
-              if (!canvas || !record) return;
-              record("불투명도", () =>
-                applyImageOpacity(selectedObject, v / 100, canvas)
-              );
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => {
-              if (!canvas || !record) return;
-              record("좌우 반전", () =>
-                applyImageFlipX(selectedObject, !selectedObject.flipX, canvas)
-              );
-            }}
-            className="text-xs px-2 py-1 rounded border border-zinc-700 hover:border-violet-500 shrink-0"
-          >
-            반전
-          </button>
-          <NumberField
-            label="밝기"
-            value={brightness}
-            min={-100}
-            max={100}
-            onCommit={(v) => patchImageAdjust("밝기", v, contrast, saturation)}
-          />
-          <NumberField
-            label="대비"
-            value={contrast}
-            min={-100}
-            max={100}
-            onCommit={(v) => patchImageAdjust("대비", brightness, v, saturation)}
-          />
-          <NumberField
-            label="채도"
-            value={saturation}
-            min={-100}
-            max={100}
-            onCommit={(v) =>
-              patchImageAdjust("채도", brightness, contrast, v)
-            }
-          />
-        </>
-      )}
-    </div>
-  );
+  return null;
 }
 
 function ToggleBtn({

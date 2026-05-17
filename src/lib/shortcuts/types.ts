@@ -1,4 +1,6 @@
-import type { DockPanel, Tool } from "@/stores/editorStore";
+import type { Tool } from "@/stores/editorStore";
+
+export type DockPanel = "cuts" | "tools" | "layers" | "properties";
 
 export type ShortcutActionId =
   | "undo"
@@ -41,12 +43,11 @@ export interface ShortcutBinding {
 export const TOOL_FROM_SHORTCUT: Partial<Record<ShortcutActionId, Tool>> = {
   "tool.select": "select",
   "tool.text": "text",
-  "tool.sfx": "sfx",
-  "tool.bubble-oval": "bubble-oval",
-  "tool.bubble-round": "bubble-round",
-  "tool.bubble-thought": "bubble-thought",
-  "tool.bubble-shout": "bubble-shout",
-  "tool.bubble-whisper": "bubble-whisper",
+  "tool.bubble-oval": "bubble",
+  "tool.bubble-round": "bubble",
+  "tool.bubble-thought": "bubble",
+  "tool.bubble-shout": "bubble",
+  "tool.bubble-whisper": "bubble",
 };
 
 export const DOCK_FROM_SHORTCUT: Partial<Record<ShortcutActionId, DockPanel>> = {
