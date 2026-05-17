@@ -55,7 +55,9 @@ export async function layersToFabric(
 ): Promise<void> {
   await initFabricCustomProps();
   canvas.clear();
-  canvas.backgroundColor = panelSize?.backgroundColor ?? "#ffffff";
+  const bg = panelSize?.backgroundColor;
+  canvas.backgroundColor =
+    !bg || bg === "transparent" ? "rgba(0,0,0,0)" : bg;
 
   const panelWidth = panelSize?.width ?? canvas.width ?? 690;
   const panelHeight = panelSize?.height ?? canvas.height ?? 400;

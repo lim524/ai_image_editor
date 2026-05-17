@@ -193,11 +193,13 @@ export function applyBubbleTextContent(
 export function readBubbleStyle(obj: FabricObject): BubbleStyleSnapshot {
   const shape = getBubbleShapeChildren(obj)[0] ?? obj;
   const o = shape as FabricObject & { strokeDashArray?: number[] };
+  const groupOpacity =
+    obj.type === "group" ? Number(obj.opacity ?? 1) : Number(o.opacity ?? 1);
   return {
     fill: typeof o.fill === "string" ? o.fill : "#ffffff",
     stroke: typeof o.stroke === "string" ? o.stroke : "#000000",
     strokeWidth: Number(o.strokeWidth ?? 2),
-    opacity: Number(o.opacity ?? 1),
+    opacity: groupOpacity,
     dashed: Boolean(o.strokeDashArray?.length),
   };
 }
@@ -220,9 +222,17 @@ export function applyBubbleStyle(
   patch: Partial<BubbleStyleSnapshot>,
   canvas: Canvas
 ) {
+  if (patch.opacity !== undefined && obj.type === "group") {
+    obj.set("opacity", patch.opacity);
+    const text = getBubbleTextTarget(obj);
+    if (text) text.set("opacity", 1);
+  }
+  const shapePatch = { ...patch };
+  delete shapePatch.opacity;
   const shapes =
     obj.type === "group" ? getBubbleShapeChildren(obj) : [obj];
-  shapes.forEach((child) => applyToShape(child, patch));
+  shapes.forEach((child) => applyToShape(child, shapePatch));
+  obj.set("dirty", true);
   canvas.requestRenderAll();
 }
 

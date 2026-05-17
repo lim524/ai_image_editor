@@ -149,7 +149,7 @@ export async function createProject(
     id: uuidv4(),
     projectId: project.id,
     order: 0,
-    title: "1화",
+    title: "",
     layoutSettings: { ...DEFAULT_LAYOUT },
     createdAt: now,
     updatedAt: now,
@@ -290,7 +290,7 @@ export async function createPanel(
     title: opts?.title ?? `컷 ${insertIndex + 1}`,
     width: opts?.width ?? 690,
     height: opts?.height ?? 400,
-    backgroundColor: opts?.backgroundColor ?? "#ffffff",
+    backgroundColor: opts?.backgroundColor ?? "transparent",
   };
 
   const ordered = [...existing];

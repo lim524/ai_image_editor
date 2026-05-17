@@ -28,7 +28,11 @@ export function isBubbleTextObject(obj: FabricObject): boolean {
   const data = (obj as TaggedObject).data;
   if (data?.role === "bubbleText") return true;
   const isTextType =
-    obj.type === "i-text" || obj.type === "text" || obj.type === "IText";
+    obj.type === "i-text" ||
+    obj.type === "text" ||
+    obj.type === "IText" ||
+    obj.type === "textbox" ||
+    obj.type === "Textbox";
   return isTextType && data?.role !== "bubbleShape";
 }
 
@@ -76,9 +80,11 @@ function createInnerBubbleText(
   bounds: BubbleTextBounds,
   fontSize = 16
 ): FabricObject {
-  const text = new fabric.IText(content, {
+  const maxWidth = Math.max(40, bounds.maxWidth - 16);
+  const text = new fabric.Textbox(content, {
     left: 0,
     top: 0,
+    width: maxWidth,
     originX: "center",
     originY: "center",
     textAlign: "center",
@@ -86,6 +92,8 @@ function createInnerBubbleText(
     fontSize,
     fill: "#000000",
     splitByGrapheme: true,
+    lineHeight: 1.15,
+    editable: true,
   });
   tag(text, { role: "bubbleText" });
   fitBubbleInnerText(text, bounds);

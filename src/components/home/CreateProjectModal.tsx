@@ -22,7 +22,7 @@ export function CreateProjectModal({ open, onClose }: CreateProjectModalProps) {
     setCreating(true);
     try {
       const { project, episode } = await createProject(title.trim(), format);
-      window.location.href = `/project/${project.id}/episode/${episode.id}`;
+      window.location.href = `/project/${project.id}`;
     } finally {
       setCreating(false);
     }

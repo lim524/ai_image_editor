@@ -287,6 +287,19 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           useEditorStore.getState().setSelection("none", null, null, null);
         });
 
+        canvas.on("text:changed", (opt) => {
+          const target = (opt as { target?: FabricObject }).target;
+          if (!target || !isBubbleTextObject(target)) return;
+          const parent = (
+            target as FabricObject & { group?: FabricObject }
+          ).group;
+          if (parent) {
+            fitBubbleInnerText(target, getBubbleTextBounds(parent));
+            (parent as FabricObject).set("dirty", true);
+            canvas.requestRenderAll();
+          }
+        });
+
         canvas.on("text:editing:exited", (opt) => {
           const target = (opt as { target?: FabricObject }).target;
           if (!target) return;
@@ -345,7 +358,9 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
       const canvas = fabricRef.current;
       if (!canvas || !hasLoadedRef.current) return;
       canvas.setDimensions({ width: panel.width, height: panel.height });
-      canvas.backgroundColor = panel.backgroundColor;
+      const bg = panel.backgroundColor;
+      canvas.backgroundColor =
+        !bg || bg === "transparent" ? "rgba(0,0,0,0)" : bg;
       fitViewport();
     }, [panel.width, panel.height, panel.backgroundColor, fitViewport]);
 
@@ -582,9 +597,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         ref={viewportRef}
         className="w-full h-full min-h-0 flex items-center justify-center"
       >
-        <div className="relative bg-zinc-900 rounded-lg overflow-hidden shadow-xl border border-zinc-800 inline-block leading-none">
-          <canvas ref={canvasRef} />
-        </div>
+        <canvas ref={canvasRef} className="block shadow-lg" />
       </div>
     );
   }

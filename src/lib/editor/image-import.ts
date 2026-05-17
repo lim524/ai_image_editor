@@ -145,6 +145,6 @@ export async function getOrCreateDefaultEpisode(
 ): Promise<string> {
   const episodes = await listEpisodes(projectId);
   if (episodes.length > 0) return episodes[0].id;
-  const ep = await createEpisode(projectId, "1화");
+  const ep = await createEpisode(projectId, "");
   return ep.id;
 }

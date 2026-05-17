@@ -36,11 +36,11 @@ export default function HomePage() {
       if (files.length === 0) return;
       setImporting(true);
       try {
-        const { projectId, episodeId } = await createProjectFromImages(
+        const { projectId } = await createProjectFromImages(
           files,
           fromClipboard
         );
-        window.location.href = `/project/${projectId}/episode/${episodeId}`;
+        window.location.href = `/project/${projectId}`;
       } finally {
         setImporting(false);
       }

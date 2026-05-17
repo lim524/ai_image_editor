@@ -10,6 +10,7 @@ import {
   applyBubbleInnerTextStyle,
   applyBubbleStyle,
   applyBubbleTextContent,
+  applyImageOpacity,
   applyTextContent,
   applyTextStyle,
   readBubbleInnerTextStyle,
@@ -127,12 +128,26 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
       selectedObjectType === "bubble") &&
     textStyle;
 
-  if (selectedObjectType === "image") {
+  if (selectedObjectType === "image" && selectedObject) {
     return (
-      <div className="flex-1 flex items-center px-3 min-w-0 h-11" key={propertiesTick}>
-        <span className="text-xs text-zinc-500">
-          이미지 — 드래그로 이동, 모서리 핸들로 크기 조절 (Ctrl+V 붙여넣기)
-        </span>
+      <div
+        className="flex-1 flex items-center gap-3 px-3 min-w-0 h-11"
+        key={propertiesTick}
+      >
+        <span className="text-[10px] text-zinc-500 shrink-0">이미지</span>
+        <NumberField
+          label="불투명"
+          value={Math.round((selectedObject.opacity ?? 1) * 100)}
+          min={0}
+          max={100}
+          suffix="%"
+          onCommit={(v) => {
+            if (!canvas || !record) return;
+            record("불투명도", () =>
+              applyImageOpacity(selectedObject, v / 100, canvas)
+            );
+          }}
+        />
       </div>
     );
   }
@@ -153,6 +168,7 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
             onChange={(e) => setTextDraft(e.target.value)}
             onBlur={commitTextContent}
             onKeyDown={(e) => {
+              if (isBubble) return;
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 commitTextContent();
@@ -211,6 +227,18 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
             max={200}
             suffix="px"
             onCommit={(v) => patchText("글자 크기", { fontSize: v })}
+          />
+          <NumberField
+            label="불투명"
+            value={Math.round(textStyle.opacity * 100)}
+            min={0}
+            max={100}
+            suffix="%"
+            onCommit={(v) =>
+              isBubble
+                ? patchBubble("불투명도", { opacity: v / 100 })
+                : patchText("불투명도", { opacity: v / 100 })
+            }
           />
           <ToggleBtn
             active={textStyle.fontWeight === "bold"}

@@ -6,11 +6,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CanvasEditorHandle } from "./CanvasEditor";
 import { ToolsSidebar } from "./ToolsSidebar";
 import { ContextPropertiesBar } from "./ContextPropertiesBar";
+import { ImageGallerySidebar } from "./ImageGallerySidebar";
 import { SaveStatus } from "@/components/ui/SaveStatus";
 import type { Episode, Layer, Panel, Project } from "@/lib/db/types";
 import {
+  deletePanel,
   flushPendingSave,
-  getEpisode,
   getProject,
   listLayers,
   listPanels,
@@ -19,7 +20,11 @@ import {
   updatePanel,
   updateProject,
 } from "@/lib/db/persistence";
+import { getOrCreateDefaultEpisode } from "@/lib/editor/image-import";
 import { clampPanelSize } from "@/lib/fabric/canvas-utils";
+import { renderPanelToCanvas } from "@/lib/editor/export-panel";
+import { exportPanelPng, exportPanelsZip } from "@/lib/utils/export";
+import { downloadBlob } from "@/lib/utils/backup";
 import { useEditorStore } from "@/stores/editorStore";
 import { hydrateUserFonts } from "@/lib/fonts/user-fonts";
 import {
@@ -37,16 +42,16 @@ const CanvasEditor = dynamic(
 
 interface EditorWorkspaceProps {
   projectId: string;
-  episodeId: string;
 }
 
-export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) {
+export function EditorWorkspace({ projectId }: EditorWorkspaceProps) {
   const [project, setProject] = useState<Project | null>(null);
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [panels, setPanels] = useState<Panel[]>([]);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [layersEpoch, setLayersEpoch] = useState(0);
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const editorRef = useRef<CanvasEditorHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -59,22 +64,28 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
   const propertiesExpanded =
     selectedObjectType === "text" ||
     selectedObjectType === "bubble" ||
-    selectedObjectType === "sfx";
+    selectedObjectType === "sfx" ||
+    selectedObjectType === "image";
 
   const activePanel = panels.find((p) => p.id === panelId) ?? panels[0];
+  const episodeId = episode?.id;
 
   const loadData = useCallback(async () => {
     setLayers([]);
     setPanel(null);
 
+    const epId = await getOrCreateDefaultEpisode(projectId);
+    const { getEpisode } = await import("@/lib/db/persistence");
     const [proj, ep, panelList] = await Promise.all([
       getProject(projectId),
-      getEpisode(episodeId),
-      listPanels(episodeId),
+      getEpisode(epId),
+      listPanels(epId),
     ]);
     if (!proj || !ep) return;
 
-    const targetPanel = panelList[0] ?? null;
+    const storedPanelId = useEditorStore.getState().panelId;
+    const targetPanel =
+      panelList.find((p) => p.id === storedPanelId) ?? panelList[0] ?? null;
     const layerList = targetPanel ? await listLayers(targetPanel.id) : [];
 
     setProject(proj);
@@ -82,11 +93,11 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
     setPanels(panelList);
     setPanelsStore(panelList);
     setProjectStore(projectId, proj.format);
-    setEpisodeStore(episodeId);
+    setEpisodeStore(epId);
     setLayers(layerList);
     setPanel(targetPanel?.id ?? null);
     setLayersEpoch((e) => e + 1);
-  }, [projectId, episodeId, setProjectStore, setEpisodeStore, setPanel, setPanelsStore]);
+  }, [projectId, setProjectStore, setEpisodeStore, setPanel, setPanelsStore]);
 
   useEffect(() => {
     void hydrateUserFonts();
@@ -127,6 +138,19 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
     return () => window.removeEventListener("beforeunload", handler);
   }, []);
 
+  const selectPanel = useCallback(
+    async (id: string) => {
+      editorRef.current?.persist();
+      await flushPendingSave();
+      const layerList = await listLayers(id);
+      const prevId = useEditorStore.getState().panelId;
+      setLayers(layerList);
+      setPanel(id);
+      if (id !== prevId) setLayersEpoch((e) => e + 1);
+    },
+    [setPanel]
+  );
+
   const handlePanelResize = useCallback(
     async (
       width: number,
@@ -153,55 +177,33 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
 
   const openPanelWithLayers = useCallback(
     async (panelIdToOpen: string) => {
+      if (!episodeId) return;
       const layerList = await listLayers(panelIdToOpen);
       setLayers(layerList);
       setPanel(panelIdToOpen);
       setLayersEpoch((e) => e + 1);
     },
-    [setPanel]
+    [episodeId, setPanel]
   );
 
   const ingestImageFiles = useCallback(
     async (files: File[], fromClipboard = false) => {
-      if (!project || !episode || files.length === 0) return;
+      if (!project || !episodeId || files.length === 0) return;
       setImporting(true);
       try {
-        const { createAssetFromFile } = await import("@/lib/db/persistence");
-        const canPasteOnCanvas =
-          !!activePanel &&
-          !!editorRef.current &&
-          panels.some((p) => p.id === activePanel.id);
+        let afterId: string | null =
+          activePanel?.id ?? panels[panels.length - 1]?.id ?? null;
 
         for (const file of files) {
-          if (fromClipboard && canPasteOnCanvas) {
-            const asset = await createAssetFromFile(project.id, file);
-            await editorRef.current!.replaceWithImage(asset.id, asset.blob, {
-              fromClipboard: true,
-            });
-            const layerList = await listLayers(activePanel!.id);
-            setLayers(layerList);
-            setLayersEpoch((e) => e + 1);
-          } else if (
-            !fromClipboard &&
-            canPasteOnCanvas &&
-            layers.length === 0
-          ) {
-            const asset = await createAssetFromFile(project.id, file);
-            await editorRef.current!.addImage(asset.id, asset.blob, {
-              fromClipboard: false,
-            });
-            const layerList = await listLayers(activePanel!.id);
-            setLayers(layerList);
-            setLayersEpoch((e) => e + 1);
-          } else {
-            const panel = await importImageAsPanel(projectId, episodeId, file, {
-              fromClipboard,
-            });
-            const list = await listPanels(episodeId);
-            setPanels(list);
-            setPanelsStore(list);
-            await openPanelWithLayers(panel.id);
-          }
+          const panel = await importImageAsPanel(projectId, episodeId, file, {
+            insertAfterPanelId: afterId,
+            fromClipboard,
+          });
+          afterId = panel.id;
+          const list = await listPanels(episodeId);
+          setPanels(list);
+          setPanelsStore(list);
+          await openPanelWithLayers(panel.id);
         }
         await touchEpisodeUpdated(episodeId);
         await updateProject(projectId, {});
@@ -211,12 +213,10 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
     },
     [
       project,
-      episode,
       episodeId,
       projectId,
       activePanel,
       panels,
-      layers.length,
       openPanelWithLayers,
       setPanelsStore,
     ]
@@ -258,6 +258,40 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
     if (files.length) await ingestImageFiles(files);
   };
 
+  const handleDeletePanel = async (id: string) => {
+    if (panels.length <= 1) {
+      alert("마지막 이미지는 삭제할 수 없습니다.");
+      return;
+    }
+    await deletePanel(id);
+    const list = episodeId ? await listPanels(episodeId) : [];
+    setPanels(list);
+    setPanelsStore(list);
+    if (activePanel?.id === id && list.length > 0) {
+      await selectPanel(list[0].id);
+    }
+  };
+
+  const handleExport = async () => {
+    if (!project || panels.length === 0) return;
+    editorRef.current?.persist();
+    await flushPendingSave();
+    setExporting(true);
+    try {
+      const safeName = project.title.replace(/[^\w\u3131-\uD79D-]+/g, "_") || "export";
+      if (panels.length === 1) {
+        const canvas = await renderPanelToCanvas(panels[0]);
+        const blob = await exportPanelPng(canvas);
+        downloadBlob(blob, `${safeName}.png`);
+      } else {
+        const blob = await exportPanelsZip(panels, (p) => renderPanelToCanvas(p));
+        downloadBlob(blob, `${safeName}.zip`);
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (!project || !episode) {
     return (
       <div className="flex-1 flex items-center justify-center text-zinc-500">
@@ -267,18 +301,21 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
   }
 
   return (
-    <div className="flex flex-col h-screen bg-black text-neutral-100">
+    <div className="flex flex-col h-screen bg-neutral-950 text-neutral-100">
       <header className="h-11 border-b border-neutral-800 flex items-center px-4 gap-3 shrink-0">
-        <Link
-          href={`/project/${projectId}`}
-          className="text-zinc-400 hover:text-zinc-200 text-sm"
-        >
-          ← {project.title}
+        <Link href="/" className="text-zinc-400 hover:text-zinc-200 text-sm shrink-0">
+          ← 목록
         </Link>
-        <span className="text-zinc-600">/</span>
-        <h1 className="text-sm font-medium truncate">{episode.title}</h1>
-        <div className="flex-1" />
+        <h1 className="text-sm font-medium truncate flex-1">{project.title}</h1>
         <SaveStatus />
+        <button
+          type="button"
+          onClick={() => void handleExport()}
+          disabled={exporting || panels.length === 0}
+          className="text-xs px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white disabled:opacity-40 shrink-0"
+        >
+          {exporting ? "보내는 중…" : panels.length <= 1 ? "PNG보내기" : "ZIP보내기"}
+        </button>
       </header>
 
       <div
@@ -293,7 +330,7 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
         <ToolsSidebar onPickImage={() => fileInputRef.current?.click()} />
 
         <main
-          className="flex-1 min-w-0 min-h-0 flex flex-col"
+          className="flex-1 min-w-0 min-h-0 flex flex-col bg-[#1a1a1a]"
           onDragOver={(e) => {
             e.preventDefault();
             e.dataTransfer.dropEffect = "copy";
@@ -328,6 +365,14 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
             </p>
           )}
         </main>
+
+        <ImageGallerySidebar
+          panels={panels}
+          activePanelId={activePanel?.id ?? null}
+          onSelect={(id) => void selectPanel(id)}
+          onAdd={() => fileInputRef.current?.click()}
+          onDelete={(id) => void handleDeletePanel(id)}
+        />
       </div>
     </div>
   );
