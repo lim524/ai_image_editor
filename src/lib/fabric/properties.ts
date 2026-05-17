@@ -47,6 +47,22 @@ export interface TextStyleSnapshot {
   shadowOffsetY: number;
 }
 
+export function readTextContent(obj: FabricObject): string {
+  const t = obj as FabricText;
+  return String(t.text ?? "");
+}
+
+export function applyTextContent(
+  obj: FabricObject,
+  text: string,
+  canvas: Canvas
+) {
+  const t = obj as FabricText;
+  t.set("text", text);
+  t.set("dirty", true);
+  canvas.requestRenderAll();
+}
+
 export function readTextStyle(obj: FabricObject): TextStyleSnapshot {
   const t = obj as FabricText & FabricObj;
   const shadow = t.shadow as Shadow | null;

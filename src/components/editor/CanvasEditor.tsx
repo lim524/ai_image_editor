@@ -259,6 +259,8 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           }
           markDirty();
           persistLayers();
+          syncSelection();
+          useEditorStore.getState().bumpProperties();
         });
 
         canvas.on("object:added", () => markDirty());
@@ -349,15 +351,27 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           );
           canvas!.add(text);
           canvas!.setActiveObject(text);
+          const editable = text as {
+            enterEditing?: () => void;
+            selectAll?: () => void;
+          };
+          editable.enterEditing?.();
+          requestAnimationFrame(() => editable.selectAll?.());
           recordHistory("대사 추가", before, captureSnapshot());
         } else if (tool === "sfx") {
           const sfx = await createSfxText(
-            "쾅!",
+            "",
             (canvas!.width ?? 300) / 2,
             (canvas!.height ?? 200) / 2
           );
           canvas!.add(sfx);
           canvas!.setActiveObject(sfx);
+          const editable = sfx as {
+            enterEditing?: () => void;
+            selectAll?: () => void;
+          };
+          editable.enterEditing?.();
+          requestAnimationFrame(() => editable.selectAll?.());
           recordHistory("효과음 추가", before, captureSnapshot());
         } else return;
 
