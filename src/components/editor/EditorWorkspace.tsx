@@ -84,6 +84,11 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
   const setShowAssetLibrary = useEditorStore((s) => s.setShowAssetLibrary);
   const setShowVersionHistory = useEditorStore((s) => s.setShowVersionHistory);
   const dockOpen = useEditorStore((s) => s.dockOpen);
+  const selectedObjectType = useEditorStore((s) => s.selectedObjectType);
+  const propertiesExpanded =
+    selectedObjectType === "text" ||
+    selectedObjectType === "sfx" ||
+    selectedObjectType === "bubble";
 
   const activePanel = panels.find((p) => p.id === panelId) ?? panels[0];
 
@@ -254,7 +259,7 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
   );
 
   const ingestImageFiles = useCallback(
-    async (files: File[]) => {
+    async (files: File[], fromClipboard = false) => {
       if (!project || !episode || files.length === 0) return;
       setImporting(true);
       try {
@@ -270,11 +275,14 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
         for (const file of files) {
           if (fillCurrentCanvas && afterId === activePanel?.id) {
             const asset = await createAssetFromFile(project.id, file);
-            await editorRef.current!.addImage(asset.id, asset.blob);
+            await editorRef.current!.addImage(asset.id, asset.blob, {
+              fromClipboard,
+            });
             fillCurrentCanvas = false;
           } else {
             const panel = await importImageAsPanel(projectId, episodeId, file, {
               insertAfterPanelId: afterId,
+              fromClipboard,
             });
             const list = await listPanels(episodeId);
             setPanels(list);
@@ -310,7 +318,7 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
       const files = imageFilesFromClipboard(items);
       if (files.length === 0) return;
       e.preventDefault();
-      await ingestImageFiles(files);
+      await ingestImageFiles(files, true);
     },
     [project, ingestImageFiles]
   );
@@ -460,7 +468,11 @@ export function EditorWorkspace({ projectId, episodeId }: EditorWorkspaceProps) 
       </header>
 
       {layoutMode === "edit" && dockOpen.properties && (
-        <div className="h-11 border-b border-zinc-800 bg-zinc-900/80 flex items-center shrink-0">
+        <div
+          className={`border-b border-zinc-800 bg-zinc-900/80 flex items-stretch shrink-0 ${
+            propertiesExpanded ? "min-h-[148px]" : "h-11"
+          }`}
+        >
           <ContextPropertiesBar editorRef={editorRef} />
           {activePanel && (
             <PanelSizeBar

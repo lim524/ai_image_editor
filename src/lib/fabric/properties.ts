@@ -1,5 +1,11 @@
 import { Shadow, type Canvas, type FabricObject, type FabricText, type Group } from "fabric";
 import type { SelectedObjectType } from "@/stores/editorStore";
+import { fitTextBoxToContent } from "@/lib/fabric/text-layout";
+import {
+  getBubbleShapeChildren,
+  getBubbleTextTarget,
+  isBubbleTextObject,
+} from "@/lib/fabric/bubbles";
 
 type FabricObj = FabricObject & {
   data?: { layerType?: string; bubbleType?: string; vertical?: boolean };
@@ -8,6 +14,12 @@ type FabricObj = FabricObject & {
 
 export function getObjectType(obj: FabricObject | null): SelectedObjectType {
   if (!obj) return "none";
+  if (isBubbleTextObject(obj)) {
+    const parent = (obj as FabricObj & { group?: Group }).group;
+    if (parent && (parent as FabricObj).data?.layerType === "bubble") {
+      return "bubble";
+    }
+  }
   const data = (obj as FabricObj).data;
   if (data?.layerType === "sfx") return "sfx";
   if (data?.layerType === "text") return "text";
@@ -59,6 +71,7 @@ export function applyTextContent(
 ) {
   const t = obj as FabricText;
   t.set("text", text);
+  fitTextBoxToContent(obj);
   t.set("dirty", true);
   canvas.requestRenderAll();
 }
@@ -128,6 +141,15 @@ export function applyTextStyle(
       })
     );
   }
+  if (
+    patch.fontSize !== undefined ||
+    patch.fontFamily !== undefined ||
+    patch.charSpacing !== undefined ||
+    patch.lineHeight !== undefined ||
+    patch.fontWeight !== undefined
+  ) {
+    fitTextBoxToContent(obj);
+  }
   t.set("dirty", true);
   canvas.requestRenderAll();
 }
@@ -140,8 +162,27 @@ export interface BubbleStyleSnapshot {
   dashed: boolean;
 }
 
+export function readBubbleTextContent(obj: FabricObject): string {
+  const text = getBubbleTextTarget(obj);
+  if (!text) return "";
+  return readTextContent(text);
+}
+
+export function applyBubbleTextContent(
+  obj: FabricObject,
+  text: string,
+  canvas: Canvas
+) {
+  const target = getBubbleTextTarget(obj);
+  if (!target) return;
+  applyTextContent(target, text, canvas);
+  const g = obj.type === "group" ? (obj as Group) : null;
+  g?.set("dirty", true);
+}
+
 export function readBubbleStyle(obj: FabricObject): BubbleStyleSnapshot {
-  const o = obj as FabricObject & { strokeDashArray?: number[] };
+  const shape = getBubbleShapeChildren(obj)[0] ?? obj;
+  const o = shape as FabricObject & { strokeDashArray?: number[] };
   return {
     fill: typeof o.fill === "string" ? o.fill : "#ffffff",
     stroke: typeof o.stroke === "string" ? o.stroke : "#000000",
@@ -169,13 +210,29 @@ export function applyBubbleStyle(
   patch: Partial<BubbleStyleSnapshot>,
   canvas: Canvas
 ) {
-  if (obj.type === "group") {
-    const g = obj as Group;
-    g.getObjects().forEach((child) => applyToShape(child, patch));
-  } else {
-    applyToShape(obj, patch);
-  }
+  const shapes =
+    obj.type === "group" ? getBubbleShapeChildren(obj) : [obj];
+  shapes.forEach((child) => applyToShape(child, patch));
   canvas.requestRenderAll();
+}
+
+/** 말풍선 내부 텍스트 스타일 (없으면 null) */
+export function readBubbleInnerTextStyle(
+  obj: FabricObject
+): TextStyleSnapshot | null {
+  const text = getBubbleTextTarget(obj);
+  if (!text) return null;
+  return readTextStyle(text);
+}
+
+export function applyBubbleInnerTextStyle(
+  obj: FabricObject,
+  patch: Partial<TextStyleSnapshot>,
+  canvas: Canvas
+) {
+  const text = getBubbleTextTarget(obj);
+  if (!text) return;
+  applyTextStyle(text, patch, canvas);
 }
 
 export function applyImageOpacity(

@@ -31,16 +31,22 @@ export default function HomePage() {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const openImagesInEditor = useCallback(async (files: File[]) => {
-    if (files.length === 0) return;
-    setImporting(true);
-    try {
-      const { projectId, episodeId } = await createProjectFromImages(files);
-      window.location.href = `/project/${projectId}/episode/${episodeId}`;
-    } finally {
-      setImporting(false);
-    }
-  }, []);
+  const openImagesInEditor = useCallback(
+    async (files: File[], fromClipboard = false) => {
+      if (files.length === 0) return;
+      setImporting(true);
+      try {
+        const { projectId, episodeId } = await createProjectFromImages(
+          files,
+          fromClipboard
+        );
+        window.location.href = `/project/${projectId}/episode/${episodeId}`;
+      } finally {
+        setImporting(false);
+      }
+    },
+    []
+  );
 
   const load = useCallback(async () => {
     const prev = projects;
@@ -71,7 +77,7 @@ export default function HomePage() {
       const files = imageFilesFromClipboard(items);
       if (files.length === 0) return;
       e.preventDefault();
-      void openImagesInEditor(files);
+      void openImagesInEditor(files, true);
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);

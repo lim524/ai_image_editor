@@ -2,6 +2,7 @@ import type { Canvas, FabricObject } from "fabric";
 import type { Layer } from "@/lib/db/types";
 import { getAsset } from "@/lib/db/persistence";
 import { getImageDimensions } from "@/lib/utils/thumbnail";
+import { normalizeLogicalPixelDimensions } from "@/lib/utils/image-dimensions";
 import { initFabricCustomProps } from "./init";
 
 const FABRIC_PROPS = ["assetId", "data", "selectable", "evented"] as const;
@@ -219,12 +220,36 @@ export function clampPanelSize(width: number, height: number): {
   };
 }
 
-/** 파일의 실제 픽셀 크기 (NovelAI 등 생성 해상도와 동일) */
+/** 파일 픽셀 크기. 클립보드는 NovelAI 표시 해상도에 맞게 보정 가능 */
 export async function getImageNaturalSize(
-  blob: Blob
+  blob: Blob,
+  options?: { fromClipboard?: boolean }
 ): Promise<{ width: number; height: number }> {
   const { width, height } = await getImageDimensions(blob);
-  return { width: Math.round(width), height: Math.round(height) };
+  const normalized = normalizeLogicalPixelDimensions(
+    width,
+    height,
+    options?.fromClipboard ?? false
+  );
+  return normalized;
+}
+
+/** 패널(컷) 크기 — 붙여넣기 시 논리 픽셀, 파일은 원본 픽셀 */
+export async function getPanelSizeForImage(
+  blob: Blob,
+  options?: { fromClipboard?: boolean }
+): Promise<{ width: number; height: number; bitmapWidth: number; bitmapHeight: number }> {
+  const bitmap = await getImageDimensions(blob);
+  const logical = normalizeLogicalPixelDimensions(
+    bitmap.width,
+    bitmap.height,
+    options?.fromClipboard ?? false
+  );
+  return {
+    ...clampPanelSize(logical.width, logical.height),
+    bitmapWidth: Math.round(bitmap.width),
+    bitmapHeight: Math.round(bitmap.height),
+  };
 }
 
 /**

@@ -7,12 +7,16 @@ import type { FontPreset } from "@/lib/fonts/presets";
 import { FONT_PRESETS } from "@/lib/fonts/presets";
 import { getAllFontPresets } from "@/lib/fonts/user-fonts";
 import {
+  applyBubbleInnerTextStyle,
   applyBubbleStyle,
+  applyBubbleTextContent,
   applyImageFlipX,
   applyImageOpacity,
   applyTextContent,
   applyTextStyle,
+  readBubbleInnerTextStyle,
   readBubbleStyle,
+  readBubbleTextContent,
   readTextContent,
   readTextStyle,
 } from "@/lib/fabric/properties";
@@ -45,10 +49,10 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
   }, []);
 
   useEffect(() => {
-    if (
-      selectedObject &&
-      (selectedObjectType === "text" || selectedObjectType === "sfx")
-    ) {
+    if (!selectedObject) return;
+    if (selectedObjectType === "bubble") {
+      setTextDraft(readBubbleTextContent(selectedObject));
+    } else if (selectedObjectType === "text" || selectedObjectType === "sfx") {
       setTextDraft(readTextContent(selectedObject));
     }
   }, [selectedObject, selectedObjectType, propertiesTick]);
@@ -56,14 +60,22 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
   const canvas = editorRef.current?.getCanvas();
   const record = editorRef.current?.recordAction;
 
+  const isBubble = selectedObjectType === "bubble";
+
   const patchText = (label: string, patch: Parameters<typeof applyTextStyle>[1]) => {
     if (!canvas || !selectedObject || !record) return;
     record(label, () => {
-      applyTextStyle(selectedObject, patch, canvas);
+      if (isBubble) {
+        applyBubbleInnerTextStyle(selectedObject, patch, canvas);
+      } else {
+        applyTextStyle(selectedObject, patch, canvas);
+      }
       useEditorStore.getState().setSelection(
         selectedObjectType,
         selectedObject,
-        readTextStyle(selectedObject),
+        isBubble
+          ? readBubbleInnerTextStyle(selectedObject)
+          : readTextStyle(selectedObject),
         bubbleStyle
       );
     });
@@ -71,14 +83,22 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
 
   const commitTextContent = () => {
     if (!canvas || !selectedObject || !record) return;
-    const current = readTextContent(selectedObject);
+    const current = isBubble
+      ? readBubbleTextContent(selectedObject)
+      : readTextContent(selectedObject);
     if (textDraft === current) return;
-    record("대사 수정", () => {
-      applyTextContent(selectedObject, textDraft, canvas);
+    record(isBubble ? "말풍선 대사 수정" : "대사 수정", () => {
+      if (isBubble) {
+        applyBubbleTextContent(selectedObject, textDraft, canvas);
+      } else {
+        applyTextContent(selectedObject, textDraft, canvas);
+      }
       useEditorStore.getState().setSelection(
         selectedObjectType,
         selectedObject,
-        readTextStyle(selectedObject),
+        isBubble
+          ? readBubbleInnerTextStyle(selectedObject)
+          : readTextStyle(selectedObject),
         bubbleStyle
       );
       useEditorStore.getState().bumpProperties();
@@ -117,14 +137,21 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
   }
 
   const isTextLike =
-    (selectedObjectType === "text" || selectedObjectType === "sfx") && textStyle;
+    (selectedObjectType === "text" ||
+      selectedObjectType === "sfx" ||
+      selectedObjectType === "bubble") &&
+    textStyle;
 
   if (isTextLike) {
     return (
       <div className="flex-1 flex flex-col gap-2 px-3 py-2 min-w-0" key={propertiesTick}>
         <label className="flex flex-col gap-1 min-w-0">
           <span className="text-[10px] text-zinc-500">
-            {selectedObjectType === "sfx" ? "효과음 텍스트" : "대사"}
+            {selectedObjectType === "sfx"
+              ? "효과음 텍스트"
+              : selectedObjectType === "bubble"
+                ? "말풍선 대사"
+                : "대사"}
           </span>
           <textarea
             value={textDraft}
@@ -138,7 +165,11 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
               }
             }}
             placeholder={
-              selectedObjectType === "sfx" ? "쾅!" : "대사를 입력하세요"
+              selectedObjectType === "sfx"
+                ? "쾅!"
+                : selectedObjectType === "bubble"
+                  ? "말풍선 안에 넣을 대사"
+                  : "대사를 입력하세요"
             }
             rows={2}
             className="prop-input w-full text-sm resize-none min-h-[52px] leading-relaxed"
@@ -147,7 +178,11 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
 
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-[10px] uppercase tracking-wider text-zinc-500 shrink-0">
-            {selectedObjectType === "sfx" ? "효과음" : "대사"}
+            {selectedObjectType === "sfx"
+              ? "효과음"
+              : selectedObjectType === "bubble"
+                ? "말풍선"
+                : "대사"}
           </span>
           <label className="flex items-center gap-1.5 shrink-0">
             <span className="text-[10px] text-zinc-500">글꼴</span>
@@ -225,6 +260,43 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
             <option value="right">오른쪽</option>
           </select>
         </div>
+
+        {isBubble && bubbleStyle && (
+          <div className="flex items-center gap-3 flex-wrap border-t border-zinc-800 pt-2">
+            <span className="text-[10px] text-zinc-500 shrink-0">모양</span>
+            <label className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] text-zinc-500">채움</span>
+              <input
+                type="color"
+                value={bubbleStyle.fill}
+                onChange={(e) =>
+                  patchBubble("말풍선 채움", { fill: e.target.value })
+                }
+                className="w-7 h-7 rounded border border-zinc-700"
+              />
+            </label>
+            <label className="flex items-center gap-1 shrink-0">
+              <span className="text-[10px] text-zinc-500">테두리</span>
+              <input
+                type="color"
+                value={bubbleStyle.stroke}
+                onChange={(e) =>
+                  patchBubble("말풍선 테두리", { stroke: e.target.value })
+                }
+                className="w-7 h-7 rounded border border-zinc-700"
+              />
+            </label>
+            <NumberField
+              label="두께"
+              value={bubbleStyle.strokeWidth}
+              min={0}
+              max={20}
+              step={0.5}
+              suffix="px"
+              onCommit={(v) => patchBubble("테두리 두께", { strokeWidth: v })}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -235,40 +307,8 @@ export function ContextPropertiesBar({ editorRef }: ContextPropertiesBarProps) {
       key={propertiesTick}
     >
       <span className="text-[10px] uppercase tracking-wider text-zinc-500 shrink-0 pr-1">
-        {selectedObjectType === "bubble" ? "말풍선" : "이미지"}
+        이미지
       </span>
-
-      {selectedObjectType === "bubble" && bubbleStyle && (
-        <>
-          <label className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-zinc-500">채움</span>
-            <input
-              type="color"
-              value={bubbleStyle.fill}
-              onChange={(e) => patchBubble("말풍선 채움", { fill: e.target.value })}
-              className="w-7 h-7 rounded border border-zinc-700"
-            />
-          </label>
-          <label className="flex items-center gap-1 shrink-0">
-            <span className="text-[10px] text-zinc-500">테두리</span>
-            <input
-              type="color"
-              value={bubbleStyle.stroke}
-              onChange={(e) => patchBubble("말풍선 테두리", { stroke: e.target.value })}
-              className="w-7 h-7 rounded border border-zinc-700"
-            />
-          </label>
-          <NumberField
-            label="두께"
-            value={bubbleStyle.strokeWidth}
-            min={0}
-            max={20}
-            step={0.5}
-            suffix="px"
-            onCommit={(v) => patchBubble("테두리 두께", { strokeWidth: v })}
-          />
-        </>
-      )}
 
       {selectedObjectType === "image" && selectedObject && (
         <>

@@ -15,22 +15,25 @@ import {
   addImageFromAsset,
   applyCanvasFilters,
   captureCanvasSnapshot,
-  clampPanelSize,
   fabricToLayers,
   fitCanvasToViewport,
-  getImageNaturalSize,
+  getPanelSizeForImage,
   layersToFabric,
   restoreCanvasSnapshot,
 } from "@/lib/fabric/canvas-utils";
+import { fitTextBoxToContent } from "@/lib/fabric/text-layout";
 import {
   createDialogText,
   createSfxText,
   createSpeechBubble,
+  isBubbleTextObject,
+  startBubbleTextEditing,
   type BubbleType,
 } from "@/lib/fabric/bubbles";
 import { saveLayersNow, scheduleLayerSave } from "@/lib/db/persistence";
 import {
   getObjectType,
+  readBubbleInnerTextStyle,
   readBubbleStyle,
   readTextStyle,
 } from "@/lib/fabric/properties";
@@ -40,7 +43,11 @@ export interface CanvasEditorHandle {
   getCanvas: () => Canvas | null;
   exportToCanvas: () => HTMLCanvasElement | null;
   loadLayers: (layers: Layer[]) => Promise<void>;
-  addImage: (assetId: string, blob: Blob) => Promise<void>;
+  addImage: (
+    assetId: string,
+    blob: Blob,
+    options?: { fromClipboard?: boolean }
+  ) => Promise<void>;
   undo: () => void;
   redo: () => void;
   persist: () => void;
@@ -142,13 +149,28 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         useEditorStore.getState().setSelection("none", null, null, null);
         return;
       }
-      const type = getObjectType(active);
+      let target = active;
+      let type = getObjectType(active);
+      if (isBubbleTextObject(active)) {
+        const parent = (
+          active as FabricObject & { group?: FabricObject }
+        ).group;
+        const parentData = (parent as { data?: { layerType?: string } })?.data;
+        if (parent && parentData?.layerType === "bubble") {
+          target = parent;
+          type = "bubble";
+        }
+      }
       const textStyle =
-        type === "text" || type === "sfx" ? readTextStyle(active) : null;
-      const bubbleStyle = type === "bubble" ? readBubbleStyle(active) : null;
+        type === "text" || type === "sfx"
+          ? readTextStyle(active)
+          : type === "bubble"
+            ? readBubbleInnerTextStyle(target)
+            : null;
+      const bubbleStyle = type === "bubble" ? readBubbleStyle(target) : null;
       useEditorStore
         .getState()
-        .setSelection(type, active, textStyle, bubbleStyle);
+        .setSelection(type, target, textStyle, bubbleStyle);
     }, []);
 
     const persistLayers = useCallback(() => {
@@ -270,6 +292,39 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           useEditorStore.getState().setSelection("none", null, null, null);
         });
 
+        canvas.on("text:editing:exited", (opt) => {
+          const target = (opt as { target?: FabricObject }).target;
+          if (!target) return;
+          fitTextBoxToContent(target);
+          if (isBubbleTextObject(target)) {
+            const parent = (
+              target as FabricObject & { group?: FabricObject }
+            ).group;
+            if (parent) {
+              canvas.setActiveObject(parent);
+            }
+          }
+          syncSelection();
+          useEditorStore.getState().bumpProperties();
+          markDirty();
+          persistLayers();
+        });
+
+        canvas.on("mouse:dblclick", (opt) => {
+          const hit = opt.target;
+          if (!hit) return;
+          let bubble: FabricObject = hit;
+          if (isBubbleTextObject(hit)) {
+            const parent = (hit as FabricObject & { group?: FabricObject })
+              .group;
+            if (parent) bubble = parent;
+          }
+          const data = (bubble as { data?: { layerType?: string } }).data;
+          if (data?.layerType === "bubble") {
+            startBubbleTextEditing(canvas, bubble);
+          }
+        });
+
         setCanvasReady((n) => n + 1);
       }
 
@@ -342,6 +397,8 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
           );
           canvas!.add(bubble);
           canvas!.setActiveObject(bubble);
+          syncSelection();
+          startBubbleTextEditing(canvas!, bubble);
           recordHistory(BUBBLE_LABELS[tool] ?? "말풍선 추가", before, captureSnapshot());
         } else if (tool === "text") {
           const text = await createDialogText(
@@ -417,7 +474,7 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         await applyLayersToCanvas(newLayers);
         onLayersChange(newLayers);
       },
-      addImage: async (assetId: string, blob: Blob) => {
+      addImage: async (assetId, blob, options) => {
         const before = captureSnapshot();
         const canvas = fabricRef.current;
         if (!canvas) return;
@@ -426,11 +483,12 @@ export const CanvasEditor = forwardRef<CanvasEditorHandle, CanvasEditorProps>(
         let naturalSize = false;
 
         if (isEmptyPanel) {
-          const { width: iw, height: ih } = await getImageNaturalSize(blob);
-          if (iw > 0 && ih > 0) {
-            const { width, height } = clampPanelSize(iw, ih);
-            await onPanelResize?.(width, height);
-            canvas.setDimensions({ width, height });
+          const size = await getPanelSizeForImage(blob, {
+            fromClipboard: options?.fromClipboard,
+          });
+          if (size.width > 0 && size.height > 0) {
+            await onPanelResize?.(size.width, size.height);
+            canvas.setDimensions({ width: size.width, height: size.height });
             canvas.backgroundColor = panel.backgroundColor;
             naturalSize = true;
           }

@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import type { Layer, Panel } from "@/lib/db/types";
-import { clampPanelSize } from "@/lib/fabric/canvas-utils";
+import { getPanelSizeForImage } from "@/lib/fabric/canvas-utils";
 import {
   createAssetFromFile,
   createEpisode,
@@ -77,7 +77,11 @@ export async function importImageAsPanel(
   projectId: string,
   episodeId: string,
   file: File,
-  options?: { insertAfterPanelId?: string | null; title?: string }
+  options?: {
+    insertAfterPanelId?: string | null;
+    title?: string;
+    fromClipboard?: boolean;
+  }
 ): Promise<Panel> {
   const baseName = file.name.replace(/\.[^.]+$/, "");
   const asset = await createAssetFromFile(
@@ -86,7 +90,10 @@ export async function importImageAsPanel(
     "other",
     options?.title ?? baseName
   );
-  const { width, height } = clampPanelSize(asset.width, asset.height);
+  const panelSize = await getPanelSizeForImage(file, {
+    fromClipboard: options?.fromClipboard,
+  });
+  const { width, height, bitmapWidth, bitmapHeight } = panelSize;
   const panel = await createPanel(episodeId, {
     width,
     height,
@@ -98,8 +105,8 @@ export async function importImageAsPanel(
     asset.id,
     width,
     height,
-    asset.width,
-    asset.height
+    bitmapWidth,
+    bitmapHeight
   );
   await savePanelLayersImmediate(panel.id, [layer]);
   await touchEpisodeUpdated(episodeId);
@@ -107,7 +114,10 @@ export async function importImageAsPanel(
 }
 
 /** 홈에서 이미지(들)로 새 프로젝트 + 1화 + 컷 생성 */
-export async function createProjectFromImages(files: File[]): Promise<{
+export async function createProjectFromImages(
+  files: File[],
+  fromClipboard = false
+): Promise<{
   projectId: string;
   episodeId: string;
 }> {
@@ -121,6 +131,7 @@ export async function createProjectFromImages(files: File[]): Promise<{
   for (const file of files) {
     const panel = await importImageAsPanel(project.id, episode.id, file, {
       insertAfterPanelId: afterId,
+      fromClipboard,
     });
     afterId = panel.id;
   }
